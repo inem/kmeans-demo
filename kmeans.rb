@@ -1,3 +1,6 @@
+# ami-bf5eb9d6 - ec2cluster
+# ami-ccf615a5 - elasticwulf
+
 # Short Ruby example using the ec2cluster REST API and
 # the right_aws Amazon S3 module to run a MPI job on EC2
 #
@@ -9,6 +12,7 @@
 #     $ gem install right_http_connection --no-rdoc --no-ri
 #     $ gem install right_aws --no-rdoc --no-ri
 #     $ gem install activeresource --no-ri --no-rdoc
+#     $ gem install cliaws --no-ri --no-rdoc
 #
 # 3. Run this ruby script
 #     $ ruby kmeans.rb
@@ -22,28 +26,30 @@
 
 require 'rubygems'
 require 'active_resource'
-# require 'right_aws'
 require 'cliaws'
 require 'ostruct'
 
-CONFIG = OpenStruct.new(YAML.load_file("config.yml")).freeze
-ENV['AWS_SECRET_ACCESS_KEY'] = CONFIG.aws_secret_access_key
-ENV['AWS_ACCESS_KEY_ID'] = CONFIG.aws_access_key_id
-# 
-# # helper method for s3 buckets
-# def create_bucket(bucketname, s3)
-#   begin  
-#     s3.create_bucket(bucketname)
-#   rescue  
-#     puts bucketname + ' bucket already exists...'  
+# Uncomment this to debug ActiveResource connection
+# class ActiveResource::Connection
+#   # Creates new Net::HTTP instance for communication with
+#   # remote service and resources.
+#   def http
+#     http = Net::HTTP.new(@site.host, @site.port)
+#     http.use_ssl = @site.is_a?(URI::HTTPS)
+#     http.verify_mode = OpenSSL::SSL::VERIFY_NONE if http.use_ssl
+#     http.read_timeout = @timeout if @timeout
+#     #Here's the addition that allows you to see the output
+#     http.set_debug_output $stderr
+#     return http
 #   end
 # end
 
 # ---------------------------------------------------
 # Set AWS credentials and ec2cluster service & job info
 # ---------------------------------------------------
-
-# CONFIG = YAML.load_file("config.yml")
+CONFIG = OpenStruct.new(YAML.load_file("config.yml")).freeze
+ENV['AWS_SECRET_ACCESS_KEY'] = CONFIG.aws_secret_access_key
+ENV['AWS_ACCESS_KEY_ID'] = CONFIG.aws_access_key_id
 
 # Specify input data, zip file containing code, and bash script to run the MPI job
 sample_input_files = ["input/color100.txt", "code/Simple_Kmeans.zip", "code/run_kmeans.sh" ]
@@ -59,32 +65,15 @@ out_path = "test/output/#{Time.now.strftime('%m%d%y%H%M')} "
 # Upload Input files to Amazon S3
 # ---------------------------------------------------
 
-# Create a connection to Amazon S3 using the right_aws gem
-# s3handle = RightAws::S3Interface.new(CONFIG['aws_access_key_id'],
-#             CONFIG['aws_secret_access_key'], {:multi_thread => true})
-
-
-# If input and output buckets don't exist, create them:
-# puts "Creating S3 buckets..."
-# create_bucket(CONFIG['inputbucket'], s3handle)
-# create_bucket(CONFIG['outputbucket'], s3handle)
-
-# s3infiles = []
-
-# Upload the input files and code to S3:
 puts "Uploading files to S3"
 sample_input_files.each do |infile|
   puts "uploading: " + infile
-  # s3handle.put(CONFIG['inputbucket'], infile, File.open(infile))
-  # # keep full s3 path for later
-  # s3infiles << "CONFIG.bucket infile"
   Cliaws.s3.put(File.open(infile, "rb"), "#{CONFIG.bucket}/test/#{infile}")
 end
 
 # ---------------------------------------------------
 # Submit the MPI Job
 # ---------------------------------------------------
-
 puts "Running Job command..."
 # Use ActiveResource to communicate with the ec2cluster REST API
 class Job < ActiveResource::Base
@@ -100,28 +89,28 @@ job = Job.new(:name => "Kmeans demo",
   :input_files => sample_input_files.map{|f| "#{CONFIG.bucket}/test/#{f}"}.join(" "), 
   :commands => "bash run_kmeans.sh", 
   :output_files => expected_outputs.join(" "), 
-  # map{|f| "#{CONFIG.bucket}/test/#{out_path}/#{f}"}
   :output_path => out_path, 
-  :number_of_instances => "2", 
+  :number_of_instances => 2, 
   :instance_type => "m1.small")
 
-puts job.to_s
+  # Some examples of other optional parameters for Job.new()
+  # ------------------------------------
+  # master_ami => "ami-bf5eb9d6"
+  # worker_ami => "ami-bf5eb9d6"
+  # user_packages => "python-setuptools python-docutils"
+  # availability_zone => "us-east-1a"
+  # keypair => CONFIG["keypair"]
+  # mpi_version => "openmpi"
+  # shutdown_after_complete => false
+
+
+puts job.inspect
 job.save # Saving submits the job description to the REST service  
 job_id = job.id
 
 puts "Job ID: " + job.id.to_s # returns the job ID
 puts "State: " + job.state # current state of the job
 puts "Progress: " + job.progress unless job.progress.nil? # more granular description of the current job progress
-
-# Some examples of other optional parameters for Job.new()
-# ------------------------------------
-# master_ami => "ami-bf5eb9d6"
-# worker_ami => "ami-bf5eb9d6"
-# user_packages => "python-setuptools python-docutils"
-# availability_zone => "us-east-1a"
-# keypair => CONFIG["keypair"]
-# mpi_version => "openmpi"
-# shutdown_after_complete => false
 
 # Loop, waiting for the job to complete.  
 puts "Waiting for job to complete..."
@@ -147,9 +136,6 @@ puts "Job complete, downloading results from S3"
 expected_outputs.each do |outfile|
   puts "fetching: " + outfile
   filestream = File.new(outfile, File::CREAT|File::RDWR)
-  # rhdr = s3handle.get(CONFIG['outputbucket'], out_path + outfile) do |chunk| 
-  #   filestream.write(chunk) 
-  # end
   output = Cliaws.s3.get("#{CONFIG.bucket}/#{out_path}/#{outfile}")
   filestream.write output
   filestream.close  
