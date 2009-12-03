@@ -29,7 +29,7 @@ require 'active_resource'
 require 'cliaws'
 require 'ostruct'
 
-# Uncomment this to debug ActiveResource connection
+# # Uncomment this to debug ActiveResource connection
 # class ActiveResource::Connection
 #   # Creates new Net::HTTP instance for communication with
 #   # remote service and resources.
@@ -59,7 +59,7 @@ sample_input_files = ["input/color100.txt", "code/Simple_Kmeans.zip", "code/run_
 expected_outputs = ["color100.txt.membership", "color100.txt.cluster_centres"]
 
 # Indicate desired output path, if any:
-out_path = "test/output/#{Time.now.strftime('%m%d%y%H%M')} "
+out_path = "test/output/#{Time.now.strftime('%m%d%y%H%M')}"
 
 # ---------------------------------------------------
 # Upload Input files to Amazon S3
@@ -90,7 +90,7 @@ job = Job.new(:name => "Kmeans demo",
   :commands => "bash run_kmeans.sh", 
   :output_files => expected_outputs.join(" "), 
   :output_path => out_path, 
-  :number_of_instances => 2, 
+  :number_of_instances => 1, 
   :instance_type => "m1.small")
 
   # Some examples of other optional parameters for Job.new()
